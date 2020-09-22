@@ -1,0 +1,172 @@
+module Breathing_LED(
+	input  rst_n,
+	input  clk_i,  //100Mhz
+	output pulse
+	);
+
+parameter REPEAT  = 16'h9C40; //decimal 10000
+parameter LIGHTCO = 8'h64  ;  //ecimal 100
+parameter S0      = 4'b0001;  //独热码状态机
+parameter S1      = 4'b0010;
+parameter S2      = 4'b0100;
+parameter S3      = 4'b1000;
+
+reg [3:0]  state    ;
+reg        pulse_reg;  
+reg [7:0]  light_cnt; //用于计算点亮和熄灭次数
+reg [7:0]  light_co ; //用于计算亮度
+reg [15:0]  rpt_cnt ; //用于计算每个亮度持续的次数
+reg        dec_flag ; //用于标记此时增加亮度或减小亮度，减小时为1 
+
+always@(posedge clk_i)begin
+  if(!rst_n)begin
+  	state     <= S0   ;
+  	rpt_cnt   <= 16'h0000;
+  	light_cnt <= 8'h00;
+  	light_co  <= 8'h00;
+  	dec_flag  <= 1'b0 ;
+  	pulse_reg <= 1'b0 ;
+  end
+  else begin
+  	case(state)
+  	S0: begin
+  	  state     <= S1   ;
+      rpt_cnt   <= 16'h0000;
+  	  light_cnt <= 8'h00;
+  	  light_co  <= 8'h01;
+  	  dec_flag  <= 1'b0 ;
+  	  pulse_reg <= 1'b0 ;
+  	end
+    S1: begin
+      if(light_co == 8'h01)begin       //边界情况，亮度为1时仅点亮一个
+        if(rpt_cnt == REPEAT)begin     //周期，下一状态直接进入熄灭状态
+          state     <= S2              ;
+          rpt_cnt   <= 16'h00          ;
+  	      light_cnt <= light_cnt + 1'b1;
+  	      light_co  <= light_co + 1'b1 ;
+  	      dec_flag  <= 1'b0            ;
+  	      pulse_reg <= 1'b1            ;
+        end
+      	else begin
+      	  state     <= S3              ;
+  	      light_cnt <= light_cnt + 1'b1;
+  	      pulse_reg <= 1'b1            ;
+      	end
+      end
+      else if(light_co == LIGHTCO)begin
+        if (dec_flag == 1'b0)begin         //100%亮度要重复两次
+           state     <= S2              ;
+           rpt_cnt   <= 16'h0000        ;
+  	       light_cnt <= light_cnt + 1'b1;
+  	       light_co  <= light_co        ;
+  	       dec_flag  <= 1'b1            ;
+  	       pulse_reg <= 1'b1            ;
+        end
+        else begin
+          state     <= S2              ;
+          rpt_cnt   <= 16'h0000        ;
+          light_cnt <= light_cnt + 1'b1;
+          light_co  <= light_co - 1'b1 ;
+          dec_flag  <= 1'b1            ;
+          pulse_reg <= 1'b1            ;
+        end
+      end
+      else if(dec_flag)begin
+      	state     <= S2              ;
+        rpt_cnt   <= 16'h0000        ;
+  	    light_cnt <= light_cnt + 1'b1;
+  	    light_co  <= light_co - 1'b1 ;
+  	    pulse_reg <= 1'b1            ;
+      end
+      else begin
+      	state     <= S2              ;
+        rpt_cnt   <= 16'h0000        ;
+  	    light_cnt <= light_cnt + 1'b1;
+  	    light_co  <= light_co + 1'b1 ;
+  	    pulse_reg <= 1'b1            ;
+      end
+    end
+    S2:begin
+      if(light_cnt == light_co)begin  //亮度为100%时，没有熄灭过程，因此直接跳转到S1
+      	if(light_co == LIGHTCO)begin  
+      	  if(rpt_cnt == (REPEAT - 1'b1))begin
+      	  	state     <= S1   ;
+  	        light_cnt <= 8'h00;
+  	        pulse_reg <= 1'b1 ;
+      	  end
+      	  else begin
+      	    state     <= S2            ;
+            rpt_cnt   <= rpt_cnt + 1'b1;
+  	        light_cnt <= 8'h00         ;
+  	        pulse_reg <= 1'b1          ;
+  	      end
+      	end
+      	else if(light_co == LIGHTCO - 1'b1)begin //亮度在99%时因只需要熄灭一个周期
+          if(rpt_cnt == (REPEAT - 1'b1))begin    //因此直接跳转到S1
+            state     <= S1   ;                  
+            light_cnt <= 8'h00;
+            pulse_reg <= 1'b0 ;
+          end
+          else begin
+            state     <= S2            ;
+            rpt_cnt   <= rpt_cnt + 1'b1;
+            light_cnt <= 8'h00         ;
+            pulse_reg <= 1'b0          ;
+          end
+        end
+        else begin
+          state     <= S3              ;
+          light_cnt <= light_cnt + 1'b1;
+          pulse_reg <= 1'b0            ;
+        end
+      end
+      else begin
+      	state     <= S2              ;
+  	    light_cnt <= light_cnt + 1'b1;
+  	    pulse_reg <= 1'b1            ;
+      end
+    end
+    S3:begin
+      if(light_cnt == (LIGHTCO - 1'b1))begin
+        if(light_co == 8'h01)begin
+          state     <= S1            ;
+          light_cnt <= 8'h00         ;
+          rpt_cnt   <= rpt_cnt + 1'b1;
+          pulse_reg <= 1'b0          ;
+        end
+        else if(rpt_cnt == (REPEAT - 1'b1))begin
+          state     <= S1   ;
+  	      light_cnt <= 8'h00;
+  	      pulse_reg <= 1'b0 ;
+        end 
+        else begin
+      	  state     <= S2            ;
+      	  light_cnt <= 8'h00         ;
+      	  rpt_cnt   <= rpt_cnt + 1'b1;
+      	  pulse_reg <= 1'b1          ;
+        end
+      end
+      else begin
+      	state     <= S3              ;
+      	light_cnt <= light_cnt + 1'b1;
+      	pulse_reg <= 1'b0            ;
+      end
+    end
+    default: begin state <= S0; end
+    endcase
+  end
+end
+
+ila_0 ut_i1(
+  .clk   (clk_i),
+  .probe0(state),
+  .probe1(light_cnt),
+  .probe2(rpt_cnt),
+  .probe3(light_co),
+  .probe4(dec_flag),
+  .probe5(pulse_reg)
+);
+
+assign pulse = pulse_reg;
+
+endmodule
